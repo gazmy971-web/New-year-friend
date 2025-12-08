@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Staff Raffle Spinner</title>
+<style>
+body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; text-align:center; background:#f0f2f5; color: #333; }
+h2 { color: #2c3e50; margin-bottom: 10px; }
+button { padding:12px 25px; font-size:16px; margin:10px; border:none; border-radius:50px;
+background:#007bff; color:white; cursor:pointer; transition: background 0.3s; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+button:hover { background:#0056b3; }
+button:disabled { background: #ccc; cursor: not-allowed; }
+#result { font-size:24px; margin-top:20px; font-weight:bold; color: #28a745; min-height: 40px; }
+select { padding: 10px 15px; font-size: 16px; border-radius: 8px; border: 1px solid #ccc; margin-bottom: 20px; }
+table { margin:auto; padding:10px; border-collapse:collapse; font-size:16px; display:none; margin-top: 30px; background: white; box-shadow: 0 2px 10px rgba(0,0,0,0.1); border-radius: 8px; overflow: hidden; width: 80%; max-width: 600px; }
+th, td { border:1px solid #ddd; padding:12px; text-align: left; }
+th { background-color: #f8f9fa; font-weight: bold; }
+tr:nth-child(even) { background-color: #f9f9f9; }
+</style>
+</head>
+<body>
+
+<h2>🎡 Staff Raffle Spinner</h2>
+<p>اختار اسمك واضغط Spin (كل شخص له مرة واحدة)</p>
+
+<select id="selector">
+    <option value="" disabled selected>-- اختر اسمك --</option>
+</select>
+
+<br>
+<canvas id="wheel" width="450" height="450"></canvas>
+<br>
+
+<button onclick="spin()" id="spinBtn">SPIN 🎲</button>
+
+<div id="result"></div>
+
+<hr style="margin: 40px 0; border: 0; border-top: 1px solid #ddd;">
+
+<button onclick="revealResults()" style="background-color: #6c757d;">Show Results (Admin Only 🔒)</button>
+<table id="resultsTable">
+  <thead>
+    <tr><th>الشخص (Spinner)</th><th>الاسم الذي اختاره (Selected)</th></tr>
+  </thead>
+  <tbody></tbody>
+</table>
+
+<script>
+// قائمة الأسماء - يمكنك تعديلها هنا
+let originalNames = ["Edress","Jijo","Ajay","Abualsoud","Rinu","Abdelaziz","Khalid","Lija","Somi","Karthik","Cleo","Wala","Wael","Hashem","Rini","Sowmya","Margeret","Sreepa","Anju tom","Ruksana","Ambia","Jesmol","Hossam","George","Shaza","Asma","Fatima"];
+
+let remainingTargets = [...originalNames]; // الأسماء المتبقية للفوز
+let results = {};
+let namesOnWheel = []; // الأسماء الظاهرة على العجلة
+let arc = 0;
+let startAngle = 0;
+let spinning = false;
+
+const selector = document.getElementById("selector");
+
+// تعبئة القائمة بالأسماء
+originalNames.sort().forEach(n => {
+    const opt = document.createElement("option");
+    opt.value = opt.textContent = n;
+    selector.appendChild(opt);
+});
+
+const wheel = document.getElementById("wheel");
+const ctx = wheel.getContext("2d");
+
+function drawWheel() {
+    if (namesOnWheel.length === 0) return;
+    arc = (2 * Math.PI) / namesOnWheel.length;
+    
+    for (let i = 0; i < namesOnWheel.length; i++) {
+        let angle = startAngle + i * arc;
+        ctx.beginPath();
+        // ألوان متبادلة للعجلة
+        ctx.fillStyle = i % 2 === 0 ? "#FFD700" : "#FFC107"; // Gold & Amber
+        ctx.moveTo(225, 225);
+        ctx.arc(225, 225, 225, angle, angle + arc);
+        ctx.fill();
+        ctx.save();
+        ctx.fillStyle = "black";
+        ctx.translate(225, 225);
+        ctx.rotate(angle + arc / 2);
+        ctx.textAlign = "right";
+        ctx.font = "bold 14px Arial";
+        ctx.fillText(namesOnWheel[i], 200, 5);
+        ctx.restore();
+    }
+}
+
+function prepareWheel(list) {
+    namesOnWheel = [...list];
+    ctx.clearRect(0,0,450,450);
+    drawWheel();
+}
+
+// البدء بجميع الأسماء على العجلة
+prepareWheel(originalNames);
+
+function spin() {
+    if (spinning) return;
+    
+    let person = selector.value;
+    if (!person) {
+        alert("من فضلك اختر اسمك من القائمة أولاً!");
+        return;
+    }
+    
+    // استبعاد الشخص نفسه من العجلة (لا يختار نفسه)
+    // واستبعاد من تم اختيارهم سابقاً (remainingTargets)
+    let availableOptions = remainingTargets.filter(n => n !== person);
+    
+    if (availableOptions.length === 0) {
+        alert("لم يتبق أسماء للاختيار (أو بقي اسمك فقط)!");
+        return;
+    }
+    
+    // تحديث العجلة لتشمل فقط المتاحين للاختيار
+    prepareWheel(availableOptions);
+    
+    spinning = true;
+    document.getElementById("result").innerText = "Spinning...";
+    document.getElementById("spinBtn").disabled = true; // تعطيل الزر أثناء الدوران
+
+    let spinAngle = Math.random() * 3000 + 3000; 
+    let duration = 3000;
+    let start = null;
+    
+    function animate(timestamp) {
+        if (!start) start = timestamp;
+        let progress = timestamp - start;
+        
+        startAngle += (spinAngle * (1 - progress/duration) / 100); 
+
+        ctx.clearRect(0, 0, 450, 450);
+        drawWheel();
+        
+        if (progress < duration) {
+            requestAnimationFrame(animate);
+        } else {
+            spinning = false;
+            document.getElementById("spinBtn").disabled = false;
+            finalizePick(person, availableOptions);
+        }
+    }
+    requestAnimationFrame(animate);
+}
+
+function finalizePick(person, list) {
+    let index = Math.floor((list.length - (startAngle % (2 * Math.PI)) / arc) % list.length);
+    if (index < 0) index += list.length;
+    
+    let selected = list[index];
+    
+    results[person] = selected;
+    remainingTargets = remainingTargets.filter(n => n !== selected);
+    
+    document.getElementById("result").innerText = "🎉 " + selected + " 🎉";
+    
+    // حذف الشخص الذي قام بالاختيار من القائمة
+    removePersonFromDropdown(person);
+    
+    prepareWheel(originalNames); 
+    updateResultsTable();
+}
+
+function removePersonFromDropdown(personName) {
+    for (let i = 0; i < selector.options.length; i++) {
+        if (selector.options[i].value === personName) {
+            selector.remove(i);
+            break;
+        }
+    }
+    selector.value = "";
+}
+
+function updateResultsTable(){
+  const table = document.getElementById('resultsTable');
+  const tbody = table.querySelector('tbody');
+  tbody.innerHTML = ""; 
+  
+  for (let [p, s] of Object.entries(results)) {
+      let row = tbody.insertRow();
+      let cell1 = row.insertCell(0);
+      let cell2 = row.insertCell(1);
+      cell1.innerText = p;
+      cell2.innerText = s;
+  }
+}
+
+// دالة إظهار النتائج بكلمة مرور
+function revealResults() {
+  const table = document.getElementById('resultsTable');
+  
+  // إذا كان الجدول مفتوحاً بالفعل، قم بإخفائه مباشرة (لا يحتاج باسورد للإغلاق)
+  if (table.style.display === 'table') {
+      table.style.display = 'none';
+      return;
+  }
+
+  // طلب كلمة المرور
+  let password = prompt("🔐 Enter Admin Password:");
+  
+  if (password === "9090") {
+      table.style.display = 'table';
+      updateResultsTable();
+  } else if (password !== null) {
+      alert("❌ Wrong Password! Access Denied.");
+  }
+}
+</script>
+
+</body>
+</html>
