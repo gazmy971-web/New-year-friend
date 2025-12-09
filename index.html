@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>New Year Raffle</title>
+<style>
+body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; text-align:center; background:#f0f2f5; color: #333; padding-bottom: 50px;}
+h2 { color: #2c3e50; margin-bottom: 10px; }
+button { padding:12px 25px; font-size:16px; margin:10px; border:none; border-radius:50px;
+background:#007bff; color:white; cursor:pointer; transition: background 0.3s; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+button:hover { background:#0056b3; }
+button:disabled { background: #ccc; cursor: not-allowed; }
+.admin-btn { background-color: #6c757d; margin-top: 30px;}
+select { padding: 10px 15px; font-size: 16px; border-radius: 8px; border: 1px solid #ccc; margin-bottom: 20px; width: 80%; max-width: 300px;}
+table { margin:auto; padding:10px; border-collapse:collapse; font-size:16px; display:none; margin-top: 30px; background: white; box-shadow: 0 2px 10px rgba(0,0,0,0.1); border-radius: 8px; overflow: hidden; width: 90%; max-width: 600px; }
+th, td { border:1px solid #ddd; padding:12px; text-align: left; }
+th { background-color: #f8f9fa; font-weight: bold; }
+#loading { color: #007bff; font-weight: bold; margin-top: 20px;}
+</style>
+
+<script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+<script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-database.js"></script>
+
+</head>
+<body>
+
+<h2>🎄 New Year Raffle 🎄</h2>
+
+<div id="loading">جاري الاتصال بقاعدة البيانات...<br>(لو طولت يبقى فيه مشكلة في الإعدادات)</div>
+
+<div id="gameArea" style="display:none;">
+    <p>اختار اسمك واضغط Spin</p>
+    <select id="selector"><option value="" disabled selected>-- جاري التحميل --</option></select>
+    <br>
+    <canvas id="wheel" width="400" height="400" style="max-width: 100%; height: auto;"></canvas>
+    <br>
+    <button onclick="spin()" id="spinBtn">SPIN 🎲</button>
+    <div id="result" style="font-size:24px; font-weight:bold; margin-top:20px; color:#28a745;"></div>
+</div>
+
+<div id="lockedMessage" style="display:none; padding:20px; border:2px dashed #dc3545; margin:20px; background:white;">
+    ⛔ لقد قمت بالمشاركة بالفعل! <br>
+    <span id="savedChoice" style="color:#28a745; display:block; margin-top:10px; font-weight:bold;"></span>
+</div>
+
+<hr style="margin: 40px 0; border: 0; border-top: 1px solid #ddd;">
+<button onclick="revealResults()" class="admin-btn">Admin Dashboard 🔒</button>
+<table id="resultsTable"><thead><tr><th>الاسم</th><th>الهدية</th></tr></thead><tbody></tbody></table>
+
+<script>
+    // ==========================================
+    // ⚠️⚠️ منطقة التعديل: الصق كود Firebase هنا ⚠️⚠️
+    // ==========================================
+    
+    // امسح الجزء ده وحط الكود اللي نسخته من موقع Firebase مكانه
+    const firebaseConfig = {apiKey: "AIzaSyC0FUJkBWjqvDWDx3mZ1mzh9hkaipvAbR8",
+  authDomain: "new-year-friend.firebaseapp.com",
+  databaseURL: "https://new-year-friend-default-rtdb.firebaseio.com",
+  projectId: "new-year-friend",
+  storageBucket: "new-year-friend.firebasestorage.app",
+  messagingSenderId: "715747500662",
+  appId: "1:715747500662:web:9d6a888a32d55d10a9f557"
+};
+    
+    // ==========================================
+    // نهاية منطقة التعديل
+    // ==========================================
+
+    // قائمة الأسماء الأصلية (تستخدم فقط في أول مرة لإنشاء قاعدة البيانات)
+    const initialNamesList = ["Edress","Jijo","Ajay","Abualsoud","Rinu","Abdelaziz","Khalid","Lija","Somi","Karthik","Cleo","Wala","Wael","Hashem","Rini","Sowmya","Margeret","Sreepa","Anju tom","Ruksana","Ambia","Jesmol","Hossam","George","Shaza","Asma","Fatima"];
+
+    // تهيئة Firebase
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.database();
+    const targetsRef = db.ref('targets'); // الهدايا المتاحة
+    const resultsRef = db.ref('results'); // النتائج المسجلة
+
+    // متغيرات اللعبة
+    let availableTargets = [];
+    let namesOnWheel = [];
+    let arc = 0;
+    let startAngle = 0;
+    let spinning = false;
+
+    // --- البداية ---
+    window.onload = function() {
+        // التأكد هل قاعدة البيانات فاضية؟ لو فاضية نملاها بالأسماء
+        targetsRef.once('value', (snapshot) => {
+            if (!snapshot.exists()) {
+                targetsRef.set(initialNamesList);
+            }
+        });
+
+        // التحقق المحلي: هل لعبت من قبل؟
+        let savedPerson = localStorage.getItem('raffle_person');
+        let savedSelected = localStorage.getItem('raffle_selected');
+
+        if (savedPerson && savedSelected) {
+            showLocked(savedPerson, savedSelected);
+            document.getElementById('loading').style.display = 'none';
+        } else {
+            initGame();
+        }
+    };
+
+    function initGame() {
+        // مراقبة البيانات لحظياً
+        targetsRef.on('value', (snapshot) => {
+            document.getElementById('loading').style.display = 'none';
+            document.getElementById('gameArea').style.display = 'block';
+            
+            const data = snapshot.val();
+            availableTargets = data ? Object.values(data) : []; 
+            
+            updateDropdown();
+            prepareWheel(availableTargets);
+        });
+    }
+
+    function updateDropdown() {
+        const selector = document.getElementById("selector");
+        const currentVal = selector.value;
+        
+        selector.innerHTML = '<option value="" disabled selected>-- اختر اسمك --</option>';
+        
+        initialNamesList.sort().forEach(n => {
+            const opt = document.createElement("option");
+            opt.value = opt.textContent = n;
+            selector.appendChild(opt);
+        });
+        
+        if(currentVal) selector.value = currentVal;
+    }
+
+    // --- الرسم على Canvas ---
+    const wheel = document.getElementById("wheel");
+    const ctx = wheel.getContext("2d");
+
+    function drawWheel() {
+        if (namesOnWheel.length === 0) return;
+        arc = (2 * Math.PI) / namesOnWheel.length;
+        for (let i = 0; i < namesOnWheel.length; i++) {
+            let angle = startAngle + i * arc;
+            ctx.beginPath();
+            ctx.fillStyle = i % 2 === 0 ? "#FFD700" : "#FFC107";
+            ctx.moveTo(200, 200);
+            ctx.arc(200, 200, 200, angle, angle + arc);
+            ctx.fill();
+            ctx.save();
+            ctx.fillStyle = "black";
+            ctx.translate(200, 200);
+            ctx.rotate(angle + arc / 2);
+            ctx.textAlign = "right";
+            ctx.font = "bold 14px Arial";
+            ctx.fillText(namesOnWheel[i], 180, 5);
+            ctx.restore();
+        }
+    }
+    
+    function prepareWheel(list) {
+        namesOnWheel = [...list];
+        ctx.clearRect(0,0,400,400);
+        drawWheel();
+    }
+
+    // --- منطق الدوران ---
+    function spin() {
+        if (spinning) return;
+        const selector = document.getElementById("selector");
+        let person = selector.value;
+        
+        if (!person) { alert("اختر اسمك أولاً!"); return; }
+        
+        if (availableTargets.length === 1 && availableTargets[0] === person) {
+            alert("حظك سيء! لم يتبق سواك، أعد المحاولة أو راجع المسؤول.");
+            return;
+        }
+
+        spinning = true;
+        document.getElementById("spinBtn").disabled = true;
+        
+        let spinAngle = Math.random() * 3000 + 3000; 
+        let duration = 3000;
+        let start = null;
+        
+        function animate(timestamp) {
+            if (!start) start = timestamp;
+            let progress = timestamp - start;
+            startAngle += (spinAngle * (1 - progress/duration) / 100); 
+            ctx.clearRect(0, 0, 400, 400);
+            drawWheel();
+            
+            if (progress < duration) {
+                requestAnimationFrame(animate);
+            } else {
+                tryClaimPrize(person);
+            }
+        }
+        requestAnimationFrame(animate);
+    }
+
+    function tryClaimPrize(person) {
+        let validOptions = availableTargets.filter(n => n !== person);
+        
+        if(validOptions.length === 0) {
+            alert("عفواً، لا توجد خيارات متاحة لك!");
+            spinning = false;
+            document.getElementById("spinBtn").disabled = false;
+            return;
+        }
+
+        let randomIndex = Math.floor(Math.random() * validOptions.length);
+        let selectedPrize = validOptions[randomIndex];
+
+        targetsRef.transaction(function(currentData) {
+            if (currentData) {
+                let idx = currentData.indexOf(selectedPrize);
+                if (idx !== -1) {
+                    currentData.splice(idx, 1); 
+                    return currentData;
+                }
+            }
+            return; 
+        }, function(error, committed, snapshot) {
+            if (error) {
+                alert('حدث خطأ في الاتصال');
+                resetSpin();
+            } else if (!committed) {
+                alert('سبقك شخص آخر لهذا الاسم! جاري إعادة الاختيار...');
+                tryClaimPrize(person); 
+            } else {
+                saveWin(person, selectedPrize);
+            }
+        });
+    }
+
+    function resetSpin() {
+        spinning = false;
+        document.getElementById("spinBtn").disabled = false;
+    }
+
+    function saveWin(person, selected) {
+        resultsRef.push({
+            selector: person,
+            selected: selected,
+            timestamp: firebase.database.ServerValue.TIMESTAMP
+        });
+
+        localStorage.setItem('raffle_person', person);
+        localStorage.setItem('raffle_selected', selected);
+
+        document.getElementById("result").innerText = "🎉 " + selected + " 🎉";
+        
+        setTimeout(() => {
+            alert("مبروك! اخترت: " + selected);
+            showLocked(person, selected);
+        }, 1000);
+    }
+
+    function showLocked(person, selected) {
+        document.getElementById('gameArea').style.display = 'none';
+        document.getElementById('lockedMessage').style.display = 'block';
+        document.getElementById('savedChoice').innerText = person + " -> " + selected;
+    }
+
+    // --- لوحة التحكم ---
+    function revealResults() {
+        const table = document.getElementById('resultsTable');
+        if (table.style.display === 'table') {
+            table.style.display = 'none';
+            return;
+        }
+
+        let password = prompt("كلمة سر الأدمن:");
+        if (password === "9090") {
+            table.style.display = 'table';
+            const tbody = table.querySelector('tbody');
+            tbody.innerHTML = "<tr><td colspan='2'>جاري جلب البيانات...</td></tr>";
+
+            resultsRef.once('value', (snapshot) => {
+                tbody.innerHTML = "";
+                const data = snapshot.val();
+                if(data) {
+                    Object.values(data).forEach(record => {
+                        let row = tbody.insertRow();
+                        row.insertCell(0).innerText = record.selector;
+                        row.insertCell(1).innerText = record.selected;
+                    });
+                } else {
+                    tbody.innerHTML = "<tr><td colspan='2'>لا توجد نتائج حتى الآن</td></tr>";
+                }
+            });
+        }
+    }
+</script>
+
+</body>
+</html>
